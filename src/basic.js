@@ -4,6 +4,7 @@
 import { load, save, id } from './store.js';
 import { searchProducts, findByCode, cardOf, words, SYN, STOP, typeTerms } from './search.js';
 import { scoresByMeaning } from './meaning.js';
+import { findProducts, vectorSearchProducts } from './vectordb.js';
 
 const EXTRA_STOP = new Set([
   'is', 'are', 'was', 'be', 'i', 'my', 'your', 'we', 'our', 'it', 'this', 'that', 'what', 'how', 'can', 'please', 'pls',
@@ -247,13 +248,13 @@ export async function basicReply(conv, message) {
   if (productish) {
     const query = terms.filter((w) => !/^\d/.test(w) && !['k', 'lakh', 'lac', 'rs', 'inr', 'gram', 'grams', 'gm', 'price', 'rate', 'kam', 'tak', 'upto', 'budget'].includes(w)).join(' ');
     let search = { query, ...filters };
-    let r = searchProducts({ ...search, limit: PAGE_SIZE });
+    let r = await findProducts({ ...search, limit: PAGE_SIZE });
     if (!r.total_matches && query) {
       // Retry with just the product-type words ("gold ring for wife" → "ring").
       const core = terms.filter((w) => PRODUCT_WORDS.has(w) && !['gold', 'silver', 'sona', 'chandi'].includes(w)).join(' ');
       if (core && core !== query) {
         search = { query: core, ...filters };
-        r = searchProducts({ ...search, limit: PAGE_SIZE });
+        r = await findProducts({ ...search, limit: PAGE_SIZE });
       }
     }
     if (r.total_matches) {
@@ -272,7 +273,20 @@ export async function basicReply(conv, message) {
   // 5. Weaker matches on Q&As
   if (best && best.score >= 0.4) return { text: best.f.answer, products: [] };
 
-  // 6. Don't know → owner gets it in "Needs answers"
+  // 6. No Q&A or store info, but it clearly describes products by meaning
+  // ("something for a newborn baby") → show them (strict, so "who won the
+  // cricket match" does not turn into jewellery).
+  const guess = rateQuestion ? null : await vectorSearchProducts({ query: msg, ...filters, limit: PAGE_SIZE }, { strict: true });
+  if (guess?.total_matches) {
+    const cards = guess.products.map((p) => cardOf(findByCode(p.code)));
+    return {
+      text: `Here are some designs you may like${budgetText(filters)} at today's price. Tap "Enquire on WhatsApp" on any design, or share your phone number and our team will call you.`,
+      products: cards,
+      more: guess.total_matches > cards.length ? { search: { query: msg, ...filters }, offset: cards.length, total: guess.total_matches } : null,
+    };
+  }
+
+  // 7. Don't know → owner gets it in "Needs answers"
   flag(msg, conv);
   return { text: `That's a good question — I'll check with our team and get back to you. Please share your phone number so we can reply.${wa}`, products: [] };
 }

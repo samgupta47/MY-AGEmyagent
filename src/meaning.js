@@ -48,7 +48,7 @@ function extractor() {
 
 const cache = new Map(); // translated text -> embedding
 
-async function embed(text) {
+export async function embed(text) {
   const key = translate(text);
   if (cache.has(key)) return cache.get(key);
   const ex = await extractor();

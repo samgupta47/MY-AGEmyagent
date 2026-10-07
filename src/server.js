@@ -9,6 +9,7 @@ import { syncCatalog, scheduleSync, catalogueToken, CRM_BASE } from './crm.js';
 import { directConfigured } from './crm-direct.js';
 import { similarPage, indexStats } from './vision.js';
 import { warmUp } from './meaning.js';
+import { findProducts, vectorStats } from './vectordb.js';
 import fs from 'node:fs';
 import { searchProducts, catalogSummary, findByCode, cardOf } from './search.js';
 import { PAGE_SIZE } from './basic.js';
@@ -114,7 +115,7 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // "Load more" in the chat: next page of a product search the agent already ran.
-app.post('/api/products', (req, res) => {
+app.post('/api/products', async (req, res) => {
   if (limited(`more:${req.ip}`, 120, 10 * 60_000)) return res.status(429).json({ error: 'Too many requests - please wait a minute.' });
   const offset0 = Math.max(0, Math.min(5000, Number(req.body?.offset) || 0));
   if (typeof req.body?.similar === 'string') {
@@ -130,7 +131,7 @@ app.post('/api/products', (req, res) => {
   if (typeof s.purity === 'string') search.purity = s.purity.slice(0, 10);
   for (const k of ['min_price', 'max_price', 'min_weight', 'max_weight']) if (Number.isFinite(s[k])) search[k] = s[k];
   const offset = Math.max(0, Math.min(5000, Number(req.body?.offset) || 0));
-  const r = searchProducts({ ...search, limit: PAGE_SIZE, offset });
+  const r = await findProducts({ ...search, limit: PAGE_SIZE, offset });
   const items = r.products.map((p) => cardOf(findByCode(p.code)));
   const next = offset + items.length;
   res.json({ items, more: next < r.total_matches ? { search, offset: next, total: r.total_matches } : null });
@@ -190,7 +191,7 @@ const admin = express.Router();
 admin.use(requireAdmin);
 app.use('/admin/api', admin);
 
-admin.get('/overview', (req, res) => {
+admin.get('/overview', async (req, res) => {
   const convs = load('conversations');
   const dayAgo = Date.now() - 24 * 3600_000;
   res.json({
@@ -203,6 +204,7 @@ admin.get('/overview', (req, res) => {
     apiKeySet: Boolean(config.ANTHROPIC_API_KEY),
     authEnabled: Boolean(ADMIN_PASSWORD),
     photoSearch: indexStats(),
+    vectorSearch: await vectorStats(),
     dataDir: DATA_DIR,
   });
 });
@@ -273,10 +275,10 @@ admin.post('/sync', async (req, res) => {
   }
 });
 
-admin.get('/catalog', (req, res) => {
+admin.get('/catalog', async (req, res) => {
   const { syncedAt, catalogues, source, stats, error } = load('catalog');
   const q = String(req.query.q || '');
-  const result = searchProducts({ query: q, limit: 15 });
+  const result = await findProducts({ query: q, limit: 15 });
   const products = load('catalog').products;
   const items = result.products.map((r) => products.find((p) => p.code === r.code));
   res.json({ syncedAt, catalogues, source, stats, error, direct: directConfigured(), total: products.length, matches: result.total_matches, items });

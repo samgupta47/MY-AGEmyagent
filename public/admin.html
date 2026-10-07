@@ -148,6 +148,7 @@ const VIEWS = {
         <div class="stat"><div class="v">${o.unansweredOpen}</div><div class="l">Questions needing your answer</div></div>
         <div class="stat"><div class="v">${o.faqs}</div><div class="l">Trained answers (FAQs)</div></div>
         <div class="stat"><div class="v">${o.photoSearch?.indexed ?? 0}</div><div class="l">Designs searchable by photo${o.photoSearch?.indexing ? ' (indexing…)' : ''}</div></div>
+        <div class="stat"><div class="v">${o.vectorSearch?.designs ?? 0}</div><div class="l">Designs in vector search${o.vectorSearch?.updating ? ' (updating…)' : o.vectorSearch?.ready ? '' : ' (not ready - using keyword search)'}</div></div>
       </div>
       <div class="card" style="margin-top:16px"><h2>How to train your agent</h2>
         <p class="help" style="margin:0">1. <b>Train the agent</b> → fill in store information (address, timings, policies) and add common questions with answers.<br>

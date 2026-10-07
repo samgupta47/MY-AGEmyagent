@@ -43,6 +43,8 @@ To stop it, press `Ctrl + C` in that window. After editing `src/config.js`, stop
 | `ANTHROPIC_API_KEY` | Empty = **free basic mode** (keyword answers). With a key (starts with `sk-ant-api03-`, from https://console.anthropic.com) = full conversational AI. |
 | `ADMIN_PASSWORD` | Empty = admin panel opens without login. |
 | `PHOTO_SEARCH` | `true` = customers can upload a photo to find similar designs (needs ~1 GB RAM). `false` = off. |
+| `SMART_ANSWERS` | `true` = free mode matches questions to Q&As and store info by meaning, not only words. |
+| `VECTOR_SEARCH` | `true` = product search by meaning (lightweight vector database, Orama). `false` = keyword search only. |
 | `PORT` | Default `3000`. |
 | `CRM_BASE_URL` | Default `https://crm.ittanjeweller.com`. |
 
@@ -90,6 +92,8 @@ On WordPress: "WPCode" / "Insert Headers and Footers" plugin → Footer.
 | `src/search.js` | Product search |
 | `src/config.js` | **All settings** (CRM login, API key, admin password, photo search) |
 | `src/vision.js` | Photo search (find similar designs from a customer photo) |
+| `src/vectordb.js` | Product vector database (meaning + keyword hybrid search with price/weight/metal filters) |
+| `src/meaning.js` | Small free sentence model + Hinglish word list, used for Q&A matching and product search |
 | `src/store.js` | Data storage |
 | `public/widget.js` | The chat bubble for the website |
 | `public/admin.html` | Admin panel |

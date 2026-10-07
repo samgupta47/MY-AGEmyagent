@@ -20,6 +20,9 @@ export default {
   // Free mode understands questions by meaning, not just matching words (small ~25 MB model). Set false to turn off.
   SMART_ANSWERS: true,
 
+  // Product search by meaning (vector database) instead of only keywords. Set false to use keyword search.
+  VECTOR_SEARCH: true,
+
   // Folder for saved data (training, chats, leads, products, photo model).
   // Empty = automatic: project data/ folder on Windows, ~/ittan-agent-data on a server.
   DATA_DIR: "",

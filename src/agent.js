@@ -5,6 +5,7 @@ import config from './config.js';
 import { load, save, id } from './store.js';
 import { searchProducts, findByCode, catalogSummary, publicProduct, cardOf } from './search.js';
 import { basicReply, photoReply, PAGE_SIZE } from './basic.js';
+import { findProducts } from './vectordb.js';
 
 const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY || undefined });
 
@@ -138,12 +139,12 @@ ${faqText}
 const isStr = (v) => typeof v === 'string';
 const optNum = (v) => v === undefined || v === null || typeof v === 'number';
 
-function runTool(name, input, ctx) {
+async function runTool(name, input, ctx) {
   switch (name) {
     case 'search_products': {
       if (!isStr(input.query) || !['min_price', 'max_price', 'min_weight', 'max_weight', 'limit'].every((k) => optNum(input[k])))
         throw new Error('invalid input');
-      const r = searchProducts(input);
+      const r = await findProducts(input);
       if (!r.total_matches) return 'No matching designs found. Try broader keywords or a different budget, or offer to check with the team on WhatsApp.';
       return JSON.stringify(r);
     }
@@ -361,13 +362,13 @@ export async function chat(conv, userText, emit, image = null) {
       const toolUses = message.content.filter((b) => b.type === 'tool_use');
       if (message.stop_reason !== 'tool_use' || !toolUses.length) break;
 
-      const results = toolUses.map((tu) => {
+      const results = await Promise.all(toolUses.map(async (tu) => {
         try {
-          return { type: 'tool_result', tool_use_id: tu.id, content: runTool(tu.name, tu.input ?? {}, ctx) };
+          return { type: 'tool_result', tool_use_id: tu.id, content: await runTool(tu.name, tu.input ?? {}, ctx) };
         } catch (err) {
           return { type: 'tool_result', tool_use_id: tu.id, is_error: true, content: String(err.message || err) };
         }
-      });
+      }));
       conv.messages.push({ role: 'user', content: results });
       if (reply && !/\s$/.test(reply)) {
         reply += '\n\n';

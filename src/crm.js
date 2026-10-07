@@ -78,8 +78,14 @@ let syncing = null;
 export function syncCatalog() {
   syncing ??= doSync()
     .then((catalog) => {
-      // Index photos of new/changed designs for photo search (runs in the background).
-      import('./vision.js').then((v) => v.updateIndex()).catch((e) => console.error('[vision]', e.message));
+      // Update the product vector database, then index photos of new/changed
+      // designs for photo search (both run in the background).
+      import('./vectordb.js')
+        .then((v) => v.updateProductVectors())
+        .catch((e) => console.error('[vectors]', e.message))
+        .then(() => import('./vision.js'))
+        .then((v) => v.updateIndex())
+        .catch((e) => console.error('[vision]', e.message));
       return catalog;
     })
     .finally(() => (syncing = null));
