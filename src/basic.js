@@ -2,13 +2,19 @@
 // owner's Q&As and store information, plus the product catalogue. Used when no
 // ANTHROPIC_API_KEY is configured.
 import { load, save, id } from './store.js';
-import { searchProducts, findByCode, cardOf, words, SYN, STOP } from './search.js';
+import { searchProducts, findByCode, cardOf, words, SYN, STOP, typeTerms } from './search.js';
 
 const EXTRA_STOP = new Set([
   'is', 'are', 'was', 'be', 'i', 'my', 'your', 'we', 'our', 'it', 'this', 'that', 'what', 'how', 'can', 'please', 'pls',
   'to', 'on', 'at', 'is', 'kya', 'aap', 'apka', 'apke', 'aapka', 'aapke', 'mujhe', 'hain', 'ho', 'se', 'ko', 'me', 'mein',
   'bhi', 'koi', 'kuch', 'batao', 'bataiye', 'tell', 'about', 'there', 'hello', 'hi', 'sir', 'madam', 'ji',
+  'karte', 'karti', 'karta', 'karo', 'kar', 'hota', 'hoti', 'milta', 'milti', 'wala', 'wali', 'hum', 'tum', 'ye', 'yeh', 'vo', 'woh',
 ]);
+
+// Generic words that appear in many questions; they count much less, so
+// "store timing" matches the timings line, not "Where is your store?".
+const LOW_WEIGHT = new Set(['store', 'shop', 'showroom', 'jewellers', 'jeweller', 'ittan', 'today', 'aaj', 'please', 'want', 'know', 'where', 'when', 'which', 'any', 'give', 'get', 'do', 'does']);
+const weight = (w) => (LOW_WEIGHT.has(w) ? 0.25 : 1);
 
 // Words that point to the catalogue rather than to store policy.
 const PRODUCT_WORDS = new Set();
@@ -33,9 +39,12 @@ function similarity(msgTerms, text) {
   const target = keyTerms(text);
   if (!msgTerms.length || !target.length) return 0;
   const tset = new Set(target.flatMap((w) => [stem(w), ...(SYN.get(w) || []).map(stem)]));
-  let hit = 0;
-  for (const w of msgTerms) if (tset.has(stem(w)) || (SYN.get(w) || []).some((s) => tset.has(stem(s)))) hit++;
-  return hit / msgTerms.length;
+  let hit = 0, total = 0;
+  for (const w of msgTerms) {
+    total += weight(w);
+    if (tset.has(stem(w)) || (SYN.get(w) || []).some((s) => tset.has(stem(s)))) hit += weight(w);
+  }
+  return hit / total;
 }
 
 function toRupees(numStr, unit) {
@@ -116,8 +125,16 @@ export async function photoReply(conv, buffer, message) {
     (f.metal ? p.metal === f.metal : true) &&
     (f.max_price ? p.price != null && p.price <= f.max_price : true) &&
     (f.min_price ? p.price != null && p.price >= f.min_price : true);
+  // A type typed with the photo ("similar ring under 20k") wins over the photo guess.
+  const typed = typeTerms(words(message || '')).find((t) => !['gold', 'silver'].includes(t));
   try {
-    const r = await similarToPhoto(buffer, { filter });
+    const r = await similarToPhoto(buffer, { filter, typeTerm: typed });
+    if (r.notJewellery) {
+      return {
+        text: "Hmm, this photo doesn't look like jewellery 🙂 Please send a clear photo of the piece you like (ring, earrings, necklace, bangle…), or just tell me what you're looking for.",
+        products: [],
+      };
+    }
     if (!r.codes.length) {
       flag(`[photo] ${message || 'customer sent a photo'}`, conv);
       return { text: `Thank you for the photo! I couldn't find a close match${budgetText(f)} right now — share your phone number and our team will find similar designs for you.`, products: [] };
@@ -184,8 +201,19 @@ export function basicReply(conv, message) {
   const typeWord = terms.some((w) => PRODUCT_WORDS.has(w) && !METALS.includes(w));
   // "gold rate today" is a rate question for the Q&As, not a product search.
   const rateQuestion = /\b(rate|rates|bhav|bhaav|bhao)\b/i.test(msg) && !typeWord;
-  const productish = !rateQuestion && (terms.some((w) => PRODUCT_WORDS.has(w)) || filters.max_price || filters.min_price || filters.min_weight);
-  if (best && best.score >= (productish ? 0.75 : 0.5)) return { text: best.f.answer, products: [] };
+  // A metal word alone ("old gold exchange?") is a question, not a product search;
+  // that needs a jewellery type, a budget or a weight (or just "gold" / "silver chandi").
+  const metalOnly = terms.some((w) => METALS.includes(w)) && terms.filter((w) => !METALS.includes(w)).length === 0;
+  const productish = !rateQuestion && (typeWord || metalOnly || filters.max_price || filters.min_price || filters.min_weight);
+
+  // Best store-information line, compared against the best Q&A.
+  let line = null;
+  for (const l of storeLines()) {
+    const score = similarity(terms, l);
+    if (!line || score > line.score) line = { score, l };
+  }
+  if (best && best.score >= (productish ? 0.75 : 0.5) && best.score >= (line?.score ?? 0)) return { text: best.f.answer, products: [] };
+  if (!productish && line && line.score >= 0.5) return { text: line.l, products: [] };
 
   // 4. Products
   if (productish) {
@@ -213,13 +241,7 @@ export function basicReply(conv, message) {
     return { text: `Sorry, I couldn't find designs matching that${budgetText(filters)} right now. Our team can show you more options — share your phone number and we'll call you.${wa}`, products: [] };
   }
 
-  // 5. Store information lines (address, timings, policies…)
-  let line = null;
-  for (const l of storeLines()) {
-    const score = similarity(terms, l);
-    if (!line || score > line.score) line = { score, l };
-  }
-  if (line && line.score >= 0.5) return { text: line.l, products: [] };
+  // 5. Weaker matches on Q&As
   if (best && best.score >= 0.4) return { text: best.f.answer, products: [] };
 
   // 6. Don't know → owner gets it in "Needs answers"

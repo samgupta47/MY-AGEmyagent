@@ -183,6 +183,7 @@ function runTool(name, input, ctx) {
       if (!['min_price', 'max_price', 'offset'].every((k) => optNum(input[k]))) throw new Error('invalid input');
       const photo = ctx.conv.photo;
       if (!photo) return 'No customer photo is available (or photo matching failed). Ask what type of jewellery it is and use search_products instead.';
+      if (photo.notJewellery) return 'The photo matcher thinks this photo is not jewellery. If you agree, tell the customer politely and ask for a clear photo of the piece; otherwise use search_products for the type you see.';
       const all = photo.codes.map(findByCode).filter(Boolean)
         .filter((p) => (input.max_price == null || (p.price != null && p.price <= input.max_price)) && (input.min_price == null || (p.price != null && p.price >= input.min_price)));
       const from = Math.max(0, input.offset || 0);

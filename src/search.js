@@ -29,7 +29,7 @@ const STOP = new Set(['a', 'an', 'the', 'for', 'of', 'in', 'and', 'or', 'with', 
 export { SYN, STOP };
 
 const NON_TYPE_GROUPS = new Set(['gents', 'ladies', 'baby', 'gold', 'silver']);
-function typeTerms(terms) {
+export function typeTerms(terms) {
   return terms.filter((t) => SYN.has(t) && !NON_TYPE_GROUPS.has(SYN.get(t)[0]));
 }
 

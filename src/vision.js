@@ -13,22 +13,34 @@ const MODEL = 'Xenova/clip-vit-base-patch32';
 const INDEX_FILE = path.join(DATA_DIR, 'image-index.json');
 const DIM = 512;
 
-// Jewellery types the model can recognise, and the catalogue word for each.
+// Jewellery types the model can recognise: several descriptions each (averaged,
+// which recognises much better than one), and the catalogue word for each.
+// "none" catches photos that are not jewellery (pets, people, food...).
+// Tested on 22 real photos: 16 correct vs 11 with one description per type.
 const TYPES = [
-  { key: 'ring', label: 'a finger ring', term: 'ring' },
-  { key: 'earrings', label: 'a pair of earrings', term: 'earrings' },
-  { key: 'jhumka', label: 'jhumka earrings', term: 'earrings' },
-  { key: 'necklace', label: 'a necklace', term: 'necklace' },
-  { key: 'chain', label: 'a plain gold chain', term: 'chain' },
-  { key: 'bracelet', label: 'a bracelet', term: 'bracelet' },
-  { key: 'bangle', label: 'bangles', term: 'bangle' },
-  { key: 'mangalsutra', label: 'a mangalsutra with black beads', term: 'mangalsutra' },
-  { key: 'pendant', label: 'a pendant locket', term: 'pendant' },
-  { key: 'pendant set', label: 'a pendant with matching earrings', term: 'pendant' },
-  { key: 'tikka', label: 'a maang tikka forehead jewellery', term: 'tikka' },
-  { key: 'murti', label: 'a silver idol statue of a hindu god', term: 'murti' },
-  { key: 'anklet', label: 'an anklet', term: 'anklet' },
+  { key: 'ring', term: 'ring', prompts: ['a finger ring', 'a gold ring', 'a diamond ring', 'a ring worn on a finger'] },
+  { key: 'earrings', term: 'earrings', prompts: ['a pair of earrings', 'jhumka earrings', 'gold drop earrings', 'stud earrings', 'hoop earrings'] },
+  { key: 'necklace', term: 'necklace', prompts: ['a necklace', 'a gold necklace set', 'a heavy indian bridal necklace', 'layered necklaces worn on the neck'] },
+  { key: 'chain', term: 'chain', prompts: ['a plain gold chain', 'a thin chain necklace', 'a link chain'] },
+  { key: 'bracelet', term: 'bracelet', prompts: ['a bracelet', 'a gold cuff bracelet', 'a link bracelet on a wrist'] },
+  { key: 'bangle', term: 'bangle', prompts: ['bangles', 'a gold bangle', 'glass bangles on wrists', 'a kada'] },
+  { key: 'mangalsutra', term: 'mangalsutra', prompts: ['a mangalsutra with black beads', 'a black bead necklace with a gold pendant', 'an indian wedding mangalsutra'] },
+  { key: 'pendant', term: 'pendant', prompts: ['a pendant locket', 'a small gold pendant', 'a pendant on a chain'] },
+  { key: 'tikka', term: 'tikka', prompts: ['a maang tikka forehead jewellery', 'an indian head ornament with a hanging pendant'] },
+  { key: 'murti', term: 'murti', prompts: ['a silver idol statue of a hindu god', 'a ganesha idol', 'a religious statue', 'a lakshmi ganesh murti'] },
+  { key: 'anklet', term: 'anklet', prompts: ['an anklet', 'silver payal anklets', 'an ankle chain'] },
+  { key: 'none', term: null, prompts: ['a photo of an animal', 'a photo of a cat or dog', 'a photo of a person without jewellery', 'a photo of food', 'a landscape', 'a screenshot of text', 'a car', 'a building'] },
 ];
+
+// Keep CPU use low on shared hosting: one thread, and a pause between product
+// photos while indexing (a customer search is a single ~0.1 s step).
+const SESSION = { session_options: { intraOpNumThreads: 1, interOpNumThreads: 1 } };
+const INDEX_PAUSE_MS = 400;
+// Below this the type guess is unreliable (from the 22-photo test), so results
+// are ranked by looks only and no type is claimed.
+const TYPE_CONFIDENCE = 0.4;
+const INDEX_START_DELAY_MS = 60_000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let modelsPromise = null;
 
@@ -38,13 +50,21 @@ async function models() {
     T.env.cacheDir = path.join(DATA_DIR, 'models'); // kept with the data so redeploys don't re-download it
     const [processor, vision, tokenizer, text] = await Promise.all([
       T.AutoProcessor.from_pretrained(MODEL),
-      T.CLIPVisionModelWithProjection.from_pretrained(MODEL, { dtype: 'q8' }),
+      T.CLIPVisionModelWithProjection.from_pretrained(MODEL, { dtype: 'q8', ...SESSION }),
       T.AutoTokenizer.from_pretrained(MODEL),
-      T.CLIPTextModelWithProjection.from_pretrained(MODEL, { dtype: 'q8' }),
+      T.CLIPTextModelWithProjection.from_pretrained(MODEL, { dtype: 'q8', ...SESSION }),
     ]);
-    const prompts = TYPES.map((t) => `a photo of ${t.label}`);
-    const { text_embeds } = await text(tokenizer(prompts, { padding: true, truncation: true }));
-    const typeEmbeds = TYPES.map((_, i) => normalize(text_embeds.data.slice(i * DIM, (i + 1) * DIM)));
+    const typeEmbeds = [];
+    for (const t of TYPES) {
+      const prompts = t.prompts.map((p) => `a photo of ${p}`);
+      const { text_embeds } = await text(tokenizer(prompts, { padding: true, truncation: true }));
+      const mean = new Float32Array(DIM);
+      for (let i = 0; i < prompts.length; i++) {
+        const e = normalize(text_embeds.data.slice(i * DIM, (i + 1) * DIM));
+        for (let j = 0; j < DIM; j++) mean[j] += e[j];
+      }
+      typeEmbeds.push(normalize(mean));
+    }
     return { T, processor, vision, typeEmbeds };
   })().catch((err) => {
     modelsPromise = null;
@@ -124,10 +144,13 @@ async function doUpdateIndex() {
 
   const todo = products.filter((p) => (p.thumb || p.image) && idx.items[p.code]?.img !== (p.thumb || p.image));
   if (!todo.length) return;
+  // A big batch (first run) waits a minute so the site is responsive right after start-up.
+  if (todo.length > 20) await sleep(INDEX_START_DELAY_MS);
   console.log(`[vision] indexing ${todo.length} product photo(s)…`);
   await models();
   let done = 0;
   for (const p of todo) {
+    await sleep(INDEX_PAUSE_MS); // gentle on shared-hosting CPU
     const url = p.thumb || p.image;
     try {
       let res = await fetch(url);
@@ -163,9 +186,10 @@ setInterval(() => {
 
 /**
  * Ranks in-stock designs by visual similarity to the photo.
- * Returns { id, type: {key, confidence} | null, codes: [...] }.
+ * `typeTerm` (e.g. "ring" typed by the customer) overrides the guessed type.
+ * Returns { id, type: {key, confidence} | null, notJewellery, codes: [...] }.
  */
-export async function similarToPhoto(buffer, { filter } = {}) {
+export async function similarToPhoto(buffer, { filter, typeTerm } = {}) {
   if (!config.PHOTO_SEARCH) throw new Error('photo search is turned off in src/config.js');
   const e = await embed(buffer);
   const { typeEmbeds } = await models();
@@ -178,13 +202,16 @@ export async function similarToPhoto(buffer, { filter } = {}) {
   let best = 0;
   for (let i = 1; i < exps.length; i++) if (exps[i] > exps[best]) best = i;
   const type = { key: TYPES[best].key, term: TYPES[best].term, confidence: exps[best] / sum };
+  const notJewellery = type.key === 'none' && !typeTerm;
+  const sure = !notJewellery && type.key !== 'none' && type.confidence >= TYPE_CONFIDENCE;
 
   const idx = loadIndex();
   let candidates = load('catalog').products.filter((p) => idx.items[p.code]?.e && (!filter || filter(p)));
-  // If the model is fairly sure of the type, only show that type.
-  if (type.confidence >= 0.45) {
-    const sameType = candidates.filter((p) => productMatches(p, type.term));
-    if (sameType.length >= 3) candidates = sameType;
+  // Only show one type when the customer named it, or the model is fairly sure.
+  const term = typeTerm || (sure ? type.term : null);
+  if (term) {
+    const sameType = candidates.filter((p) => productMatches(p, term));
+    if (sameType.length >= 3 || typeTerm) candidates = sameType;
   }
   const codes = candidates
     .map((p) => ({ code: p.code, s: dot(e, idx.items[p.code].e) }))
@@ -194,7 +221,7 @@ export async function similarToPhoto(buffer, { filter } = {}) {
 
   const id = crypto.randomBytes(8).toString('hex');
   results.set(id, { codes, at: Date.now() });
-  return { id, type: type.confidence >= 0.45 ? type : null, codes };
+  return { id, type: sure && !typeTerm ? type : null, notJewellery, codes };
 }
 
 export function similarPage(id, offset, n) {
