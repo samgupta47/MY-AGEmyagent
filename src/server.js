@@ -7,6 +7,7 @@ import { load, save, id, flushAll, DATA_DIR } from './store.js';
 import { syncCatalog, scheduleSync, catalogueToken, CRM_BASE } from './crm.js';
 import { directConfigured } from './crm-direct.js';
 import { similarPage, indexStats } from './vision.js';
+import { warmUp } from './meaning.js';
 import fs from 'node:fs';
 import { searchProducts, catalogSummary, findByCode, cardOf } from './search.js';
 import { PAGE_SIZE } from './basic.js';
@@ -331,6 +332,7 @@ app.listen(PORT, () => {
   if (!ADMIN_PASSWORD) console.warn('ADMIN_PASSWORD is not set - the admin panel is open without login (fine on your own computer, set one before hosting publicly)');
   syncCatalog().catch((e) => console.error('[crm]', e));
   scheduleSync();
+  setTimeout(warmUp, 20_000).unref(); // load the meaning model once the site is up
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

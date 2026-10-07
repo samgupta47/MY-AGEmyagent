@@ -17,6 +17,9 @@ export default {
   // Find similar designs from a customer's photo (needs ~1 GB RAM). Set false to turn off.
   PHOTO_SEARCH: true,
 
+  // Free mode understands questions by meaning, not just matching words (small ~25 MB model). Set false to turn off.
+  SMART_ANSWERS: true,
+
   // Folder for saved data (training, chats, leads, products, photo model).
   // Empty = automatic: project data/ folder on Windows, ~/ittan-agent-data on a server.
   DATA_DIR: "",

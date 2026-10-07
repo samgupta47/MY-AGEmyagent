@@ -3,6 +3,7 @@
 // ANTHROPIC_API_KEY is configured.
 import { load, save, id } from './store.js';
 import { searchProducts, findByCode, cardOf, words, SYN, STOP, typeTerms } from './search.js';
+import { scoresByMeaning } from './meaning.js';
 
 const EXTRA_STOP = new Set([
   'is', 'are', 'was', 'be', 'i', 'my', 'your', 'we', 'our', 'it', 'this', 'that', 'what', 'how', 'can', 'please', 'pls',
@@ -153,8 +154,12 @@ export async function photoReply(conv, buffer, message) {
   }
 }
 
+// Lowest meaning score accepted as "same question" (tested: correct matches
+// scored 0.33-0.90, unrelated questions 0.10-0.17).
+const MEANING_MIN = 0.3;
+
 /** Returns { text, products: [card...] } for one customer message. */
-export function basicReply(conv, message) {
+export async function basicReply(conv, message) {
   const s = load('settings');
   const msg = message.trim();
   const terms = keyTerms(msg);
@@ -214,6 +219,29 @@ export function basicReply(conv, message) {
   }
   if (best && best.score >= (productish ? 0.75 : 0.5) && best.score >= (line?.score ?? 0)) return { text: best.f.answer, products: [] };
   if (!productish && line && line.score >= 0.5) return { text: line.l, products: [] };
+
+  // 3b. Match by meaning when the words differ ("where is the game being held"
+  // ≈ "Where do I play?", "dukaan kahan hai" ≈ address). Product searches need
+  // a much closer match so "show me gold rings" still shows rings.
+  // Q&A questions compare question-to-question (reliable, low bar). A store-info
+  // line "Address: ..." is also compared by its label ("address"); a plain
+  // statement needs a stronger match, so "EMI on credit card?" doesn't get
+  // answered with "We accept UPI, cards and cash". Tested: 13/17 right, 0 wrong
+  // (misses go to "Needs answers" for the owner to teach).
+  const faqList = load('faqs');
+  const cands = faqList.map((f) => ({ text: f.question, min: MEANING_MIN, answer: f.answer }));
+  for (const l of storeLines()) {
+    const label = (l.match(/^([^:]{2,40}):\s*\S/) || [])[1];
+    if (label) cands.push({ text: label.toLowerCase(), min: 0.35, answer: l });
+    cands.push({ text: l, min: label ? 0.4 : 0.5, answer: l });
+  }
+  const scores = await scoresByMeaning(msg, cands.map((c) => c.text));
+  if (scores) {
+    // Take the closest match overall, then check it is close enough - so
+    // "when do you open" picks the timings line, not a weaker Q&A.
+    const pick = cands.map((c, i) => ({ ...c, score: scores[i] })).sort((a, b) => b.score - a.score)[0];
+    if (pick && pick.score >= (productish ? 0.6 : pick.min)) return { text: pick.answer, products: [] };
+  }
 
   // 4. Products
   if (productish) {

@@ -276,7 +276,7 @@ export async function chat(conv, userText, emit, image = null) {
   // Free mode: no API key configured → keyword-based replies, no AI cost.
   if (!config.ANTHROPIC_API_KEY) {
     conv.basicHistory ??= [];
-    const r = image ? await photoReply(conv, image.buffer, userText) : basicReply(conv, userText);
+    const r = image ? await photoReply(conv, image.buffer, userText) : await basicReply(conv, userText);
     conv.basicHistory.push(userText);
     conv.messages.length = historyLength;
     emit('text', { delta: r.text });
