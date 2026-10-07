@@ -5,6 +5,9 @@ export default {
   CRM_EMAIL: "sameergpt9719@gmail.com",
   CRM_PASSWORD: "Lt2zv@A!5s&d1",
 
+  // Store WhatsApp number for "Enquire on WhatsApp" buttons (used unless changed in Admin → Settings)
+  WHATSAPP_PHONE: "9914905216",
+
   // Password for the admin panel (/admin). Empty = no login.
   ADMIN_PASSWORD: "",
 

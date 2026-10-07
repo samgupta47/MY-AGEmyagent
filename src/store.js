@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import config from './config.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.join(here, '..', 'data');
@@ -47,6 +48,7 @@ export function load(name) {
   } catch (err) {
     if (err.code !== 'ENOENT') console.error(`[store] could not read ${name}.json:`, err.message);
   }
+  if (name === 'settings' && !value.whatsappPhone) value.whatsappPhone = config.WHATSAPP_PHONE || '';
   cache[name] = value;
   return value;
 }
