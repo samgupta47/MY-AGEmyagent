@@ -154,7 +154,10 @@ const VIEWS = {
         2. <b>CRM products</b> → paste your public CRM catalogue links; products and live prices sync automatically every ${'hour'}.<br>
         3. Check <b>Needs answers</b> regularly — questions the agent couldn't answer appear there; answer once and the agent learns it.<br>
         4. Read <b>Conversations</b> to see what customers ask, and teach better answers from there.</p>
-        <p class="muted" style="margin:10px 0 0">Last CRM sync: ${when(c.syncedAt)}</p></div>`;
+        <p class="muted" style="margin:10px 0 0">Last CRM sync: ${when(c.syncedAt)}</p></div>
+      <div class="card"><h2>Backup</h2>
+        <p class="help">Download your training (store info, Q&As, settings), all customer chats, leads, unanswered questions and customer photos as one zip file. Do this now and then and keep it safe.</p>
+        <a class="btn" href="/admin/api/backup" style="text-decoration:none;display:inline-block">Download backup (.zip)</a></div>`;
   },
 
   async train(v) {

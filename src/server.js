@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import { ZipArchive } from 'archiver';
 import { load, save, id, flushAll, DATA_DIR } from './store.js';
 import { syncCatalog, scheduleSync, catalogueToken, CRM_BASE } from './crm.js';
 import { directConfigured } from './crm-direct.js';
@@ -293,6 +294,26 @@ admin.get('/conversations', (req, res) => {
 admin.get('/conversations/:id', (req, res) => {
   const c = load('conversations').find((x) => x.id === req.params.id);
   c ? res.json(c) : res.status(404).json({ error: 'Not found' });
+});
+
+// One-click backup: settings, Q&As, chats, leads, unanswered questions and
+// customer photos as a zip (products, photo index and models rebuild themselves).
+admin.get('/backup', async (req, res) => {
+  flushAll(); // write any pending changes first
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="ittan-agent-backup-${stamp}.zip"` });
+  const archive = new ZipArchive({ zlib: { level: 6 } });
+  archive.on('error', (err) => {
+    console.error('[backup]', err);
+    res.destroy(err);
+  });
+  archive.pipe(res);
+  for (const name of ['settings', 'faqs', 'conversations', 'leads', 'unanswered']) {
+    const file = path.join(DATA_DIR, `${name}.json`);
+    if (fs.existsSync(file)) archive.file(file, { name: `${name}.json` });
+  }
+  if (fs.existsSync(UPLOADS)) archive.directory(UPLOADS, 'uploads');
+  await archive.finalize();
 });
 
 admin.get('/uploads/:name', (req, res) => {
