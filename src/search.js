@@ -3,16 +3,16 @@
 import { load } from './store.js';
 
 const SYNONYMS = [
-  ['necklace', 'neckless', 'necklac', 'haar', 'har', 'neklace', 'set'],
-  ['earring', 'earrings', 'tops', 'jhumka', 'jhumki', 'bali', 'baali', 'studs', 'kaan'],
-  ['ring', 'rings', 'anguthi', 'angoothi', 'mundri', 'band', 'challa', 'chhalla'],
+  ['necklace', 'neckless', 'necklac', 'haar', 'har', 'neklace', 'set', 'kaintha', 'kantha'],
+  ['earring', 'earrings', 'tops', 'jhumka', 'jhumki', 'bali', 'baali', 'studs', 'kaan', 'valiyan', 'waliyan', 'baliyan', 'kante'],
+  ['ring', 'rings', 'anguthi', 'angoothi', 'mundri', 'band', 'challa', 'chhalla', 'chhaap'],
   ['mangalsutra', 'mangalsutre', 'mangal', 'sutar', 'mangalsutar'],
   ['pendant', 'pendent', 'pendal', 'locket'],
   ['chain', 'chains', 'zanjeer'],
   ['bracelet', 'braclet', 'kada', 'kadaa'],
   ['bangle', 'bangles', 'kangan', 'chudi', 'choodi'],
   ['murti', 'idol', 'statue', 'god', 'bhagwan'],
-  ['anklet', 'payal', 'pajeb', 'payel'],
+  ['anklet', 'payal', 'pajeb', 'payel', 'jhanjar', 'jhanjran', 'pazeb'],
   ['tikka', 'maang', 'mang', 'maangtikka'],
   ['nose', 'nath', 'nosepin', 'laung'],
   ['gents', 'men', 'mens', 'male', 'boys', 'gent'],

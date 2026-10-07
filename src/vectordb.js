@@ -167,7 +167,8 @@ export async function vectorSearchProducts({ query = '', metal, purity, min_pric
 
     const qWords = words(translate(query))
       .map((w) => AUDIENCE[w] ?? w)
-      .filter((w) => w && !NOISE.has(w) && !/^\d/.test(w));
+      // keyword half matches word starts, so tiny words ("to", "pe") would match "tops"/"pendant"
+      .filter((w) => w && w.length > 2 && !NOISE.has(w) && !/^\d/.test(w));
     const where = {};
     if (metal) where.metal = { eq: metal };
     if (purity) where.purity = { eq: String(purity).toUpperCase().replace(/\s+/g, '') };
@@ -197,8 +198,11 @@ export async function vectorSearchProducts({ query = '', metal, purity, min_pric
           offset: 0,
           includeVectors: false,
         });
-      // strict: used when guessing whether an unmatched question is about products.
-      res = await run(strict ? STRICT_SIMILARITY : SIMILARITY);
+      // strict: guessing whether an unmatched question is about products -
+      // meaning only, so stray keywords ("book", "delhi") can't pull in designs.
+      res = strict
+        ? await search(db, { mode: 'vector', vector, similarity: STRICT_SIMILARITY, where, limit: from + n, includeVectors: false })
+        : await run(SIMILARITY);
       // Vague requests ("gift for my wife under 50k"): show the closest designs anyway.
       if (!res.count && !strict) res = await run(RELAXED_SIMILARITY);
     } else {

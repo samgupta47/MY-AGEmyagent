@@ -3,7 +3,7 @@
 // ANTHROPIC_API_KEY is configured.
 import { load, save, id } from './store.js';
 import { searchProducts, findByCode, cardOf, words, SYN, STOP, typeTerms } from './search.js';
-import { scoresByMeaning } from './meaning.js';
+import { scoresByMeaning, romanize } from './meaning.js';
 import { findProducts, vectorSearchProducts } from './vectordb.js';
 
 const EXTRA_STOP = new Set([
@@ -162,7 +162,8 @@ const MEANING_MIN = 0.3;
 /** Returns { text, products: [card...] } for one customer message. */
 export async function basicReply(conv, message) {
   const s = load('settings');
-  const msg = message.trim();
+  // Punjabi (Gurmukhi) / Hindi (Devanagari) letters → English letters first.
+  const msg = romanize(message.trim());
   const terms = keyTerms(msg);
   const wa = s.whatsappPhone ? ' You can also chat with our team on WhatsApp using the link below.' : '';
 
@@ -211,6 +212,8 @@ export async function basicReply(conv, message) {
   // that needs a jewellery type, a budget or a weight (or just "gold" / "silver chandi").
   const metalOnly = terms.some((w) => METALS.includes(w)) && terms.filter((w) => !METALS.includes(w)).length === 0;
   const productish = !rateQuestion && (typeWord || metalOnly || filters.max_price || filters.min_price || filters.min_weight);
+  const browsing = Boolean(filters.max_price || filters.min_price || filters.min_weight) ||
+    /\b(show|dikha\w*|vekha\w*|vikha\w*|want|chahi\w*|looking|search|find|designs?|collection|options?|buy|kharid\w*|lena|laina|lainde)\b/i.test(msg);
 
   // Best store-information line, compared against the best Q&A.
   let line = null;
@@ -241,7 +244,11 @@ export async function basicReply(conv, message) {
     // Take the closest match overall, then check it is close enough - so
     // "when do you open" picks the timings line, not a weaker Q&A.
     const pick = cands.map((c, i) => ({ ...c, score: scores[i] })).sort((a, b) => b.score - a.score)[0];
-    if (pick && pick.score >= (productish ? 0.6 : pick.min)) return { text: pick.answer, products: [] };
+    // Browsing ("show me necklaces", "rings under 30k") needs a very close Q&A
+    // to win; a question about a service that mentions an item ("can you make
+    // my old necklace shine?") checks the Q&As first.
+    const need = !productish ? pick?.min : browsing ? 0.6 : Math.max(pick?.min ?? 0, 0.42);
+    if (pick && pick.score >= need) return { text: pick.answer, products: [] };
   }
 
   // 4. Products
