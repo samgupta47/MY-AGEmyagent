@@ -213,7 +213,13 @@ export async function basicReply(conv, message) {
   const metalOnly = terms.some((w) => METALS.includes(w)) && terms.filter((w) => !METALS.includes(w)).length === 0;
   const productish = !rateQuestion && (typeWord || metalOnly || filters.max_price || filters.min_price || filters.min_weight);
   const browsing = Boolean(filters.max_price || filters.min_price || filters.min_weight) ||
-    /\b(show|dikha\w*|vekha\w*|vikha\w*|want|chahi\w*|looking|search|find|designs?|collection|options?|buy|kharid\w*|lena|laina|lainde)\b/i.test(msg);
+    /\b(show|dikha\w*|vekha\w*|vikha\w*|want|chahi\w*|looking|search|find|buy|kharid\w*|lena|laina|lainde|have|paas|hai kya|milte|milega|available|stock|price|cost|kitne ka|rate of)\b/i.test(msg);
+  // A question about a service ("do you resize rings?", "can I book a video call
+  // to see designs?") is not shopping: if no Q&A answers it, it goes to
+  // "Needs answers" instead of showing products.
+  const serviceQuestion = !browsing &&
+    (/^(do|does|can|could|will|would|is|are|what|how|when|where|why|kya|ki)\b/i.test(msg) ||
+      /\b(kar(te|oge|doge|dete|de|do)|doge|dioge|diyoge|deyoge|sakt[eai]|sakd[eai]|dete|dinde|dende)\b/i.test(msg));
 
   // Best store-information line, compared against the best Q&A.
   let line = null;
@@ -252,7 +258,7 @@ export async function basicReply(conv, message) {
   }
 
   // 4. Products
-  if (productish) {
+  if (productish && !serviceQuestion) {
     const query = terms.filter((w) => !/^\d/.test(w) && !['k', 'lakh', 'lac', 'rs', 'inr', 'gram', 'grams', 'gm', 'price', 'rate', 'kam', 'tak', 'upto', 'budget'].includes(w)).join(' ');
     let search = { query, ...filters };
     let r = await findProducts({ ...search, limit: PAGE_SIZE });
@@ -283,7 +289,7 @@ export async function basicReply(conv, message) {
   // 6. No Q&A or store info, but it clearly describes products by meaning
   // ("something for a newborn baby") → show them (strict, so "who won the
   // cricket match" does not turn into jewellery).
-  const guess = rateQuestion ? null : await vectorSearchProducts({ query: msg, ...filters, limit: PAGE_SIZE }, { strict: true });
+  const guess = rateQuestion || serviceQuestion ? null : await vectorSearchProducts({ query: msg, ...filters, limit: PAGE_SIZE }, { strict: true });
   if (guess?.total_matches) {
     const cards = guess.products.map((p) => cardOf(findByCode(p.code)));
     return {

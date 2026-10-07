@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { create, insertMultiple, removeMultiple, search, save, load as loadDb, count } from '@orama/orama';
+import { create, insertMultiple, getByID, search, save, load as loadDb, count } from '@orama/orama';
 import config from './config.js';
 import { DATA_DIR, load } from './store.js';
 import { SYN, words, STOP, publicProduct, findByCode, searchProducts } from './search.js';
@@ -17,7 +17,7 @@ const FILE = path.join(DIR, 'products-v2.json'); // bump when SCHEMA changes
 const DIM = 384; // all-MiniLM-L6-v2
 const SIMILARITY = 0.4; // minimum meaning match for a design to count as a result
 const RELAXED_SIMILARITY = 0.25; // retry for vague requests that found nothing
-const STRICT_SIMILARITY = 0.5; // deciding whether an unmatched question is about products
+const STRICT_SIMILARITY = 0.35; // deciding whether an unmatched question is about products (meaning only; tested: 0 false matches on 9 unrelated questions)
 
 const SCHEMA = {
   code: 'string',
@@ -108,17 +108,26 @@ async function doUpdate() {
     wanted.set(p.code, { p, type, text, hash });
   }
 
-  const remove = [...have.keys()].filter((code) => !wanted.has(code) || wanted.get(code).hash !== have.get(code));
-  const add = [...wanted.values()].filter((w) => !have.has(w.p.code) || have.get(w.p.code) !== w.hash);
-  if (!remove.length && !add.length) {
+  const changed = [...wanted.values()].some((w) => have.get(w.p.code) !== w.hash) || [...have.keys()].some((c) => !wanted.has(c));
+  if (!changed) {
     ready = true;
     return;
   }
-  if (remove.length) await removeMultiple(db, remove);
 
-  console.log(`[vectors] embedding ${add.length} design(s)…`);
+  // Build the new version alongside the old one and swap when done, so
+  // searches never see a half-updated database. Prices change daily with the
+  // gold rate; a design whose words didn't change keeps its meaning vector
+  // (only new or renamed designs are embedded again).
+  const next = await emptyDb();
   const docs = [];
-  for (const [i, w] of add.entries()) {
+  let embedded = 0;
+  for (const w of wanted.values()) {
+    const prev = have.has(w.p.code) ? await getByID(db, w.p.code) : null;
+    let embedding = prev && prev.text === w.text ? prev.embedding : null;
+    if (!embedding) {
+      embedding = Array.from(await embed(w.text));
+      if (++embedded % 50 === 0) await new Promise((r) => setTimeout(r, 50)); // stay gentle on shared CPU
+    }
     docs.push({
       id: w.p.code,
       code: w.p.code,
@@ -129,14 +138,14 @@ async function doUpdate() {
       purity: (w.p.purity || '').toUpperCase(),
       price: w.p.price ?? -1,
       weight: w.p.weightG ?? -1,
-      embedding: Array.from(await embed(w.text)),
+      embedding,
     });
-    if (i % 50 === 49) await new Promise((r) => setTimeout(r, 50)); // stay gentle on shared CPU
   }
-  if (docs.length) await insertMultiple(db, docs);
+  await insertMultiple(next, docs);
+  db = next;
   persist();
   ready = true;
-  console.log(`[vectors] product vector database ready: ${await count(db)} designs`);
+  console.log(`[vectors] product vector database ready: ${await count(db)} designs (${embedded} newly embedded)`);
 }
 
 export async function vectorStats() {
@@ -159,7 +168,7 @@ const PHRASE_TYPES = [[/black\s*beads?/, 'mangalsutra'], [/fore\s*head|maang/, '
  * Hybrid product search. Same result shape as the keyword searchProducts(),
  * or null when the vector database is not available (caller falls back).
  */
-export async function vectorSearchProducts({ query = '', metal, purity, min_price, max_price, min_weight, max_weight, limit = 8, offset = 0 }, { strict = false } = {}) {
+export async function vectorSearchProducts({ query = '', metal, purity, min_price, max_price, min_weight, max_weight, limit = 8, offset = 0 }, { strict = false, similarityOverride } = {}) {
   if (!config.VECTOR_SEARCH) return null;
   try {
     await openDb();
@@ -200,8 +209,11 @@ export async function vectorSearchProducts({ query = '', metal, purity, min_pric
         });
       // strict: guessing whether an unmatched question is about products -
       // meaning only, so stray keywords ("book", "delhi") can't pull in designs.
-      res = strict
-        ? await search(db, { mode: 'vector', vector, similarity: STRICT_SIMILARITY, where, limit: from + n, includeVectors: false })
+      // A known catalogue word ("baby", "ladies", "gold", a type) is reliable on
+      // its own, and single words make weak meaning vectors - use normal search.
+      const knownWord = qWords.some((w) => SYN.has(w));
+      res = strict && !knownWord
+        ? await search(db, { mode: 'vector', vector, similarity: similarityOverride ?? STRICT_SIMILARITY, where, limit: from + n, includeVectors: false })
         : await run(SIMILARITY);
       // Vague requests ("gift for my wife under 50k"): show the closest designs anyway.
       if (!res.count && !strict) res = await run(RELAXED_SIMILARITY);
