@@ -9,7 +9,7 @@ export default {
   WHATSAPP_PHONE: "9914905216",
 
   // Password for the admin panel (/admin). Empty = no login.
-  ADMIN_PASSWORD: "",
+  ADMIN_PASSWORD: "Ittan@kgSZH0aF#26",
 
   // Claude API key (starts with sk-ant-api03-). Empty = free basic mode.
   ANTHROPIC_API_KEY: "",
