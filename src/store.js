@@ -3,12 +3,34 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import config from './config.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const DATA_DIR = path.join(here, '..', 'data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// Where training, chats, leads, synced products and the photo model are kept.
+// On a server, hosting panels replace the app folder on every deploy, so data
+// lives in the account's home folder instead; on Windows (your PC) it stays in
+// the project's data/ folder.
+function pickDataDir() {
+  const candidates = [
+    config.DATA_DIR,
+    process.platform === 'win32' ? path.join(here, '..', 'data') : path.join(os.homedir(), 'ittan-agent-data'),
+    path.join(here, '..', 'data'),
+  ].filter(Boolean);
+  for (const dir of candidates) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      return dir;
+    } catch {
+      /* not writable here - try the next place */
+    }
+  }
+  throw new Error('No writable folder for data');
+}
+export const DATA_DIR = pickDataDir();
 
 const DEFAULTS = {
   settings: {

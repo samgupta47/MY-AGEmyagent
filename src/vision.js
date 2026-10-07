@@ -35,7 +35,7 @@ let modelsPromise = null;
 async function models() {
   modelsPromise ??= (async () => {
     const T = await import('@huggingface/transformers');
-    T.env.cacheDir = path.join(DATA_DIR, '..', 'models');
+    T.env.cacheDir = path.join(DATA_DIR, 'models'); // kept with the data so redeploys don't re-download it
     const [processor, vision, tokenizer, text] = await Promise.all([
       T.AutoProcessor.from_pretrained(MODEL),
       T.CLIPVisionModelWithProjection.from_pretrained(MODEL, { dtype: 'q8' }),

@@ -17,6 +17,10 @@ export default {
   // Find similar designs from a customer's photo (needs ~1 GB RAM). Set false to turn off.
   PHOTO_SEARCH: true,
 
+  // Folder for saved data (training, chats, leads, products, photo model).
+  // Empty = automatic: project data/ folder on Windows, ~/ittan-agent-data on a server.
+  DATA_DIR: "",
+
   // Port the server listens on (hosting panels may override this automatically).
   PORT: 3000,
 };

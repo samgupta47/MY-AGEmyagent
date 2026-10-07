@@ -201,6 +201,7 @@ admin.get('/overview', (req, res) => {
     apiKeySet: Boolean(config.ANTHROPIC_API_KEY),
     authEnabled: Boolean(ADMIN_PASSWORD),
     photoSearch: indexStats(),
+    dataDir: DATA_DIR,
   });
 });
 
