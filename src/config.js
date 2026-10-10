@@ -3,7 +3,7 @@ export default {
   // CRM login (read-only Viewer account is enough) - the agent reads all designs + stock from here
   CRM_BASE_URL: "https://crm.ittanjeweller.com",
   CRM_EMAIL: "sameergpt9719@gmail.com",
-  CRM_PASSWORD: "Lt2zv@A!5s&d1",
+  CRM_PASSWORD: "f#53NEBamecm1",
 
   // Store WhatsApp number for "Enquire on WhatsApp" buttons (used unless changed in Admin → Settings)
   WHATSAPP_PHONE: "9914905216",
